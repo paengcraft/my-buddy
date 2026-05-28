@@ -7,16 +7,9 @@ mod state;
 use std::sync::Arc;
 use tauri::Manager;
 
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let udp_socket = tauri::async_runtime::block_on(network::bind_udp_socket())
                 .ok()
@@ -31,7 +24,6 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            greet,
             commands::get_local_identity,
             commands::list_peers,
             commands::send_reaction,
