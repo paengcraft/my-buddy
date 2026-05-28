@@ -23,11 +23,19 @@
 
   let displayName = $state("Buddy");
 
+  function isTauriRuntime() {
+    return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  }
+
   onMount(() => {
     let cleanup: (() => void) | undefined;
     let peerRefresh: ReturnType<typeof setInterval> | undefined;
 
     async function start() {
+      if (!isTauriRuntime()) {
+        return;
+      }
+
       try {
         const identity = await invoke<LocalIdentity>("get_local_identity");
         displayName = identity.display_name;
@@ -68,6 +76,10 @@
   async function reactToBuddy() {
     buddy.triggerReaction();
 
+    if (!isTauriRuntime()) {
+      return;
+    }
+
     try {
       await invoke("send_reaction", { reaction: "tap" });
       buddy.setNetworkError(null);
@@ -78,6 +90,10 @@
 
   async function sendMessage(text: string) {
     buddy.showLocalBubble(text);
+
+    if (!isTauriRuntime()) {
+      return;
+    }
 
     try {
       await invoke("send_chat_message", { text });
