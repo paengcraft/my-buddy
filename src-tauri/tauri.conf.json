@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tauri-app",
+  "productName": "Buddy Noti",
   "version": "0.1.0",
   "identifier": "com.buddynoti.app",
   "build": {
@@ -12,11 +12,22 @@
   "app": {
     "windows": [
       {
-        "title": "tauri-app",
-        "width": 800,
-        "height": 600
+        "title": "Buddy Noti",
+        "width": 320,
+        "height": 372,
+        "resizable": false,
+        "maximizable": false,
+        "minimizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "visibleOnAllWorkspaces": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "acceptFirstMouse": true
       }
     ],
+    "macOSPrivateApi": true,
     "security": {
       "csp": null
     }
