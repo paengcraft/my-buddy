@@ -1,156 +1,208 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import { listen } from "@tauri-apps/api/event";
+  import { onMount } from "svelte";
+  import BuddyCharacter from "$lib/components/BuddyCharacter.svelte";
+  import MessageComposer from "$lib/components/MessageComposer.svelte";
+  import SpeechBubble from "$lib/components/SpeechBubble.svelte";
+  import {
+    createBuddyEventController,
+    type FrontendEvent,
+    type PeerInfo,
+  } from "$lib/stores/buddyEvents";
+  import { createConnectionLabel } from "$lib/stores/connection";
 
-  let name = $state("");
-  let greetMsg = $state("");
+  type LocalIdentity = {
+    device_id: string;
+    display_name: string;
+  };
 
-  async function greet(event: Event) {
-    event.preventDefault();
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    greetMsg = await invoke("greet", { name });
+  const buddy = createBuddyEventController();
+  const buddyState = buddy.state;
+  const connectionLabel = createConnectionLabel(buddyState);
+
+  let displayName = $state("Buddy");
+
+  onMount(() => {
+    let cleanup: (() => void) | undefined;
+    let peerRefresh: ReturnType<typeof setInterval> | undefined;
+
+    async function start() {
+      try {
+        const identity = await invoke<LocalIdentity>("get_local_identity");
+        displayName = identity.display_name;
+      } catch (error) {
+        buddy.setNetworkError(String(error));
+      }
+
+      try {
+        cleanup = await listen<FrontendEvent>("buddy-event", (event) => {
+          buddy.applyFrontendEvent(event.payload);
+        });
+      } catch (error) {
+        buddy.setNetworkError(String(error));
+      }
+
+      peerRefresh = setInterval(async () => {
+        try {
+          const peers = await invoke<PeerInfo[]>("list_peers");
+          for (const peer of peers) {
+            buddy.applyFrontendEvent({ type: "peer_discovered", peer });
+          }
+        } catch (error) {
+          buddy.setNetworkError(String(error));
+        }
+      }, 4000);
+    }
+
+    void start();
+
+    return () => {
+      cleanup?.();
+      if (peerRefresh) {
+        clearInterval(peerRefresh);
+      }
+    };
+  });
+
+  async function reactToBuddy() {
+    buddy.triggerReaction();
+
+    try {
+      await invoke("send_reaction", { reaction: "tap" });
+      buddy.setNetworkError(null);
+    } catch (error) {
+      buddy.setNetworkError(String(error));
+    }
+  }
+
+  async function sendMessage(text: string) {
+    buddy.showLocalBubble(text);
+
+    try {
+      await invoke("send_chat_message", { text });
+      buddy.setNetworkError(null);
+    } catch (error) {
+      buddy.setNetworkError(String(error));
+    }
   }
 </script>
 
-<main class="container">
-  <h1>Welcome to Tauri + Svelte</h1>
+<main class="buddy-stage" aria-label="Desktop buddy">
+  <section class="bubble-slot" aria-label="Buddy message">
+    <SpeechBubble message={$buddyState.activeBubble} />
+  </section>
 
-  <div class="row">
-    <a href="https://vite.dev" target="_blank">
-      <img src="/vite.svg" class="logo vite" alt="Vite Logo" />
-    </a>
-    <a href="https://tauri.app" target="_blank">
-      <img src="/tauri.svg" class="logo tauri" alt="Tauri Logo" />
-    </a>
-    <a href="https://svelte.dev" target="_blank">
-      <img src="/svelte.svg" class="logo svelte-kit" alt="SvelteKit Logo" />
-    </a>
-  </div>
-  <p>Click on the Tauri, Vite, and SvelteKit logos to learn more.</p>
+  <BuddyCharacter
+    reactionToken={$buddyState.reactionToken}
+    onInteract={reactToBuddy}
+  />
 
-  <form class="row" onsubmit={greet}>
-    <input id="greet-input" placeholder="Enter a name..." bind:value={name} />
-    <button type="submit">Greet</button>
-  </form>
-  <p>{greetMsg}</p>
+  <section class="controls" aria-label="Buddy controls">
+    <div class="status-row">
+      <span class="status-dot" class:connected={$buddyState.peers.length > 0}></span>
+      <span>{$connectionLabel}</span>
+    </div>
+    <MessageComposer onSend={sendMessage} />
+    {#if $buddyState.networkError}
+      <p class="network-error">{$buddyState.networkError}</p>
+    {/if}
+    <p class="identity">{displayName}</p>
+  </section>
 </main>
 
 <style>
-.logo.vite:hover {
-  filter: drop-shadow(0 0 2em #747bff);
-}
-
-.logo.svelte-kit:hover {
-  filter: drop-shadow(0 0 2em #ff3e00);
-}
-
-:root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 400;
-
-  color: #0f0f0f;
-  background-color: #f6f6f6;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  -webkit-text-size-adjust: 100%;
-}
-
-.container {
-  margin: 0;
-  padding-top: 10vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
-}
-
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: 0.75s;
-}
-
-.logo.tauri:hover {
-  filter: drop-shadow(0 0 2em #24c8db);
-}
-
-.row {
-  display: flex;
-  justify-content: center;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-
-a:hover {
-  color: #535bf2;
-}
-
-h1 {
-  text-align: center;
-}
-
-input,
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  transition: border-color 0.25s;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
-}
-
-button {
-  cursor: pointer;
-}
-
-button:hover {
-  border-color: #396cd8;
-}
-button:active {
-  border-color: #396cd8;
-  background-color: #e8e8e8;
-}
-
-input,
-button {
-  outline: none;
-}
-
-#greet-input {
-  margin-right: 5px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
+  :global(html),
+  :global(body) {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: transparent;
+    font-family:
+      Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+      "Segoe UI", sans-serif;
   }
 
-  a:hover {
-    color: #24c8db;
+  :global(button),
+  :global(input) {
+    letter-spacing: 0;
   }
 
-  input,
-  button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
+  .buddy-stage {
+    position: relative;
+    display: grid;
+    grid-template-rows: 72px 190px auto;
+    justify-items: center;
+    width: 320px;
+    min-height: 360px;
+    padding: 14px 16px 16px;
+    box-sizing: border-box;
+    background: transparent;
+    color: #172033;
   }
-  button:active {
-    background-color: #0f0f0f69;
-  }
-}
 
+  .bubble-slot {
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    min-height: 72px;
+  }
+
+  .controls {
+    display: grid;
+    justify-items: center;
+    gap: 7px;
+    width: 100%;
+  }
+
+  .status-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 260px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.66);
+    color: #172033;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1.2;
+    box-shadow: 0 8px 20px rgb(15 23 42 / 0.1);
+    backdrop-filter: blur(14px);
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #f59e0b;
+    box-shadow: 0 0 0 3px rgb(245 158 11 / 0.18);
+  }
+
+  .status-dot.connected {
+    background: #10b981;
+    box-shadow: 0 0 0 3px rgb(16 185 129 / 0.18);
+  }
+
+  .network-error {
+    max-width: 260px;
+    margin: 0;
+    padding: 5px 8px;
+    border-radius: 8px;
+    background: rgb(254 226 226 / 0.86);
+    color: #991b1b;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+  }
+
+  .identity {
+    margin: 0;
+    color: rgb(23 32 51 / 0.62);
+    font-size: 11px;
+    font-weight: 800;
+  }
 </style>
