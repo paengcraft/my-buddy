@@ -1,0 +1,20 @@
+{
+  "name": "buddy-relay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "dev": "wrangler dev --config wrangler.toml",
+    "deploy:dry-run": "wrangler deploy --config wrangler.toml --dry-run",
+    "check:billing": "node scripts/check_billing_guardrails.mjs",
+    "deploy": "wrangler deploy --config wrangler.toml"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260529.1",
+    "typescript": "^5.6.2",
+    "vitest": "^4.1.7",
+    "wrangler": "^4.95.0"
+  }
+}

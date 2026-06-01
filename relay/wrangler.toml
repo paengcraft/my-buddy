@@ -1,0 +1,11 @@
+name = "buddy-relay"
+main = "src/index.ts"
+compatibility_date = "2026-05-29"
+
+[[durable_objects.bindings]]
+name = "PAIRING_ROOM"
+class_name = "PairingRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["PairingRoom"]
