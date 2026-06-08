@@ -7,3 +7,4 @@ node_modules
 native/.build
 native/build
 relay/.wrangler
+.superpowers/
