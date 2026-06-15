@@ -8,6 +8,8 @@ public enum BuddyGeometry {
     public static let idleVerticalPadding: CGFloat = 64
     public static let chatHeight: CGFloat = 98
     public static let settingsHeight: CGFloat = 390
+    public static let todoBoardWidth: CGFloat = 336
+    public static let todoBoardHeight: CGFloat = 228
     public static let contentVerticalPadding: CGFloat = 14
 
     public static func clampedCharacterSize(_ size: CGFloat) -> CGFloat {
@@ -17,14 +19,21 @@ public enum BuddyGeometry {
     public static func stageSize(
         characterSize rawCharacterSize: CGFloat,
         chatOpen: Bool,
-        settingsOpen: Bool
+        settingsOpen: Bool,
+        todoBoardOpen: Bool = false
     ) -> CGSize {
         let characterSize = clampedCharacterSize(rawCharacterSize)
-        let width = max(minimumStageWidth, characterSize + 72)
+        let width = max(
+            minimumStageWidth,
+            characterSize + 72,
+            todoBoardOpen ? todoBoardWidth + 36 : 0
+        )
         let overlayHeight: CGFloat
 
         if settingsOpen {
             overlayHeight = settingsHeight
+        } else if todoBoardOpen {
+            overlayHeight = todoBoardHeight
         } else if chatOpen {
             overlayHeight = chatHeight
         } else {
@@ -44,13 +53,15 @@ public enum BuddyGeometry {
     public static func characterAnchorOffset(
         characterSize rawCharacterSize: CGFloat,
         chatOpen: Bool,
-        settingsOpen: Bool
+        settingsOpen: Bool,
+        todoBoardOpen: Bool = false
     ) -> CGPoint {
         let characterSize = clampedCharacterSize(rawCharacterSize)
         let stageSize = stageSize(
             characterSize: characterSize,
             chatOpen: chatOpen,
-            settingsOpen: settingsOpen
+            settingsOpen: settingsOpen,
+            todoBoardOpen: todoBoardOpen
         )
 
         return CGPoint(

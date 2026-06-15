@@ -23,6 +23,11 @@ final class BuddyAppState: ObservableObject {
     @Published var relayHealthStatus = "Health not tested"
     @Published var chatDeliveryStatus: String?
     @Published var diagnosticsCopyStatus: String?
+    @Published var dockedCorner: BuddyDockedCorner? {
+        didSet { requestStageResize() }
+    }
+    @Published private(set) var todoSnapshot = BuddyTodoSnapshot.empty
+    @Published var todoStatus: String?
 
     let displayName: String
     var onStageSizeChange: ((CGSize) -> Void)?
@@ -30,7 +35,9 @@ final class BuddyAppState: ObservableObject {
     private static let characterSizeKey = "characterSize"
     private static let deviceIdKey = "deviceId"
     private static let relayPairingCodeKey = "relayPairingCode"
+    private static let todoSnapshotKeyPrefix = "todoSnapshot."
     private static let relayBaseURLString = "https://buddy-relay.ruccess0-0.workers.dev"
+    private let deviceId: String
     private let animationFramesById: [String: [NSImage]]
     private let idleImage: NSImage
     private let networkService: NetworkService
@@ -41,7 +48,9 @@ final class BuddyAppState: ObservableObject {
     private var speechTimer: Timer?
     private var chatStatusTimer: Timer?
     private var diagnosticsStatusTimer: Timer?
+    private var todoStatusTimer: Timer?
     private var peerPruneTimer: Timer?
+    private var activeTodoPeerId: String?
 
     init() {
         idleImage = BuddyAssets.idleImage()
@@ -54,6 +63,7 @@ final class BuddyAppState: ObservableObject {
         if storedDeviceId == nil {
             UserDefaults.standard.set(deviceId, forKey: Self.deviceIdKey)
         }
+        self.deviceId = deviceId
 
         let storedSize = UserDefaults.standard.double(forKey: Self.characterSizeKey)
         characterSize = BuddyGeometry.clampedCharacterSize(
@@ -74,6 +84,7 @@ final class BuddyAppState: ObservableObject {
             relayEndpoint = nil
             cloudRelayService = nil
         }
+        todoSnapshot = loadTodoSnapshot(for: todoStoragePeerId)
         connectNetworkEvents()
     }
 
@@ -81,7 +92,8 @@ final class BuddyAppState: ObservableObject {
         BuddyGeometry.stageSize(
             characterSize: characterSize,
             chatOpen: isChatOpen,
-            settingsOpen: isSettingsOpen
+            settingsOpen: isSettingsOpen,
+            todoBoardOpen: isTodoBoardOpen
         )
     }
 
@@ -89,8 +101,22 @@ final class BuddyAppState: ObservableObject {
         BuddyGeometry.characterAnchorOffset(
             characterSize: characterSize,
             chatOpen: isChatOpen,
-            settingsOpen: isSettingsOpen
+            settingsOpen: isSettingsOpen,
+            todoBoardOpen: isTodoBoardOpen
         )
+    }
+
+    var isTodoBoardOpen: Bool {
+        dockedCorner != nil && !isSettingsOpen && !isChatOpen
+    }
+
+    var todoItems: [BuddyTodoItem] {
+        todoSnapshot.items
+    }
+
+    var todoCountLabel: String {
+        let remainingCount = todoSnapshot.items.filter { !$0.isDone }.count
+        return "\(remainingCount) left"
     }
 
     var connectionLabel: String {
@@ -148,6 +174,7 @@ final class BuddyAppState: ObservableObject {
         speechTimer?.invalidate()
         chatStatusTimer?.invalidate()
         diagnosticsStatusTimer?.invalidate()
+        todoStatusTimer?.invalidate()
         peerPruneTimer?.invalidate()
         networkService.stop()
         cloudRelayService?.disconnect()
@@ -171,7 +198,83 @@ final class BuddyAppState: ObservableObject {
         isSettingsOpen.toggle()
         if isSettingsOpen {
             isChatOpen = false
+            dockedCorner = nil
         }
+    }
+
+    func updateDocking(windowFrame: CGRect, visibleFrame: CGRect?) {
+        guard let visibleFrame else {
+            dockedCorner = nil
+            return
+        }
+
+        dockedCorner = BuddyCornerDockingPolicy.dockedCorner(
+            windowFrame: windowFrame,
+            visibleFrame: visibleFrame
+        )
+        if dockedCorner != nil {
+            isChatOpen = false
+            isSettingsOpen = false
+        }
+    }
+
+    @discardableResult
+    func addTodo(_ text: String) -> Bool {
+        guard let preparedText = BuddyTodoInputPolicy.preparedText(text) else {
+            setTemporaryTodoStatus("Keep TODOs under \(BuddyTodoInputPolicy.maximumTextLength) characters")
+            return false
+        }
+
+        let now = Date().timeIntervalSince1970
+        let item = BuddyTodoItem(
+            id: UUID().uuidString,
+            text: preparedText,
+            isDone: false,
+            createdAt: now,
+            createdByDeviceId: deviceId,
+            updatedAt: now,
+            updatedByDeviceId: deviceId
+        )
+        todoSnapshot.items.append(item)
+        todoSnapshot.items.sort { $0.createdAt < $1.createdAt }
+        persistTodoSnapshot()
+        sendTodoSnapshot()
+        setTemporaryTodoStatus("TODO added")
+        return true
+    }
+
+    func toggleTodo(id: String) {
+        guard let index = todoSnapshot.items.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+
+        todoSnapshot.items[index].isDone.toggle()
+        todoSnapshot.items[index].updatedAt = Date().timeIntervalSince1970
+        todoSnapshot.items[index].updatedByDeviceId = deviceId
+        persistTodoSnapshot()
+        sendTodoSnapshot()
+    }
+
+    func deleteTodo(id: String) {
+        guard todoSnapshot.items.contains(where: { $0.id == id }) else {
+            return
+        }
+
+        todoSnapshot.items.removeAll { $0.id == id }
+        let deletion = BuddyTodoDeletionRecord(
+            id: id,
+            deletedAt: Date().timeIntervalSince1970,
+            deletedByDeviceId: deviceId
+        )
+        todoSnapshot.deletions.removeAll { $0.id == id }
+        todoSnapshot.deletions.append(deletion)
+        persistTodoSnapshot()
+        sendTodoSnapshot()
+        setTemporaryTodoStatus("TODO deleted")
+    }
+
+    func todoAuthorLabel(for item: BuddyTodoItem) -> String {
+        item.createdByDeviceId == deviceId ? "me" : "buddy"
     }
 
     func adjustCharacterSize(stepCount: Int) {
@@ -360,6 +463,8 @@ final class BuddyAppState: ObservableObject {
             showSpeech(text)
         case .peer(let peer):
             upsertPeer(peer)
+        case .todoSnapshot(let snapshot):
+            mergeTodoSnapshot(snapshot)
         }
     }
 
@@ -430,11 +535,20 @@ final class BuddyAppState: ObservableObject {
         }
     }
 
+    private func setTemporaryTodoStatus(_ text: String) {
+        todoStatusTimer?.invalidate()
+        todoStatus = text
+        todoStatusTimer = Timer.scheduledTimer(withTimeInterval: 1.6, repeats: false) { [weak self] _ in
+            self?.todoStatus = nil
+        }
+    }
+
     private func upsertPeer(_ peer: BuddyPeer) {
         peers.removeAll { $0.id == peer.id }
         peers.append(peer)
         peers.sort { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
         networkError = nil
+        activateTodoPeerIfNeeded(peer.id)
     }
 
     private func prunePeers() {
@@ -446,5 +560,69 @@ final class BuddyAppState: ObservableObject {
         DispatchQueue.main.async {
             self.onStageSizeChange?(self.stageSize)
         }
+    }
+
+    private var todoStoragePeerId: String {
+        activeTodoPeerId ?? "local"
+    }
+
+    private func todoStorageKey(for peerId: String) -> String {
+        "\(Self.todoSnapshotKeyPrefix)\(peerId)"
+    }
+
+    private func loadTodoSnapshot(for peerId: String) -> BuddyTodoSnapshot {
+        guard let data = UserDefaults.standard.data(forKey: todoStorageKey(for: peerId)),
+              let snapshot = try? JSONDecoder().decode(BuddyTodoSnapshot.self, from: data)
+        else {
+            return .empty
+        }
+
+        return snapshot
+    }
+
+    private func persistTodoSnapshot() {
+        guard let data = try? JSONEncoder().encode(todoSnapshot) else {
+            return
+        }
+
+        UserDefaults.standard.set(data, forKey: todoStorageKey(for: todoStoragePeerId))
+    }
+
+    private func activateTodoPeerIfNeeded(_ peerId: String) {
+        guard activeTodoPeerId == nil else {
+            return
+        }
+
+        activeTodoPeerId = peerId
+        let storedSnapshot = loadTodoSnapshot(for: peerId)
+        todoSnapshot = BuddyTodoSyncPolicy.merged(
+            local: todoSnapshot,
+            remote: storedSnapshot
+        )
+        persistTodoSnapshot()
+        sendTodoSnapshot()
+    }
+
+    private func mergeTodoSnapshot(_ snapshot: BuddyTodoSnapshot) {
+        let mergedSnapshot = BuddyTodoSyncPolicy.merged(
+            local: todoSnapshot,
+            remote: snapshot
+        )
+        if mergedSnapshot == todoSnapshot {
+            if snapshot != todoSnapshot {
+                sendTodoSnapshot()
+            }
+            return
+        }
+
+        todoSnapshot = mergedSnapshot
+        persistTodoSnapshot()
+        sendTodoSnapshot()
+        setTemporaryTodoStatus("TODO synced")
+    }
+
+    private func sendTodoSnapshot() {
+        networkService.sendTodoSnapshot(todoSnapshot)
+        cloudRelayService?.sendTodoSnapshot(todoSnapshot)
     }
 }

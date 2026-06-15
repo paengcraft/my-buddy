@@ -12,7 +12,9 @@ My Buddy is a native macOS desktop buddy prototype. It runs as a transparent alw
 - Double click opens chat.
 - Right click toggles the edit/settings UI.
 - Drag the character to move it around the desktop.
+- Drag the character into a screen corner docking zone to open the shared TODO board.
 - Settings UI contains peer status, relay room controls, size presets/slider, display name, reset, and quick reactions.
+- Shared TODOs show who created each item, can be completed or deleted, and sync through LAN or the relay.
 - UDP LAN broadcast on port `49277` for nearby reaction/chat sync.
 - Cloudflare Worker relay for different-network reaction/chat sync.
 
@@ -175,12 +177,14 @@ https://buddy-relay.ruccess0-0.workers.dev
 5. Click `Join` on both Macs.
 6. Send a chat message, use a quick reaction, or single-click the character on one Mac.
 7. The other Mac should show the speech bubble or play the same reaction.
+8. Drag one buddy into a screen corner, add a TODO, and confirm it appears on the other Mac.
+9. Toggle and delete the TODO from either Mac and confirm both sides converge.
 
 Relay billing guardrails:
 
 - The Worker uses Cloudflare Workers and one Durable Object binding only.
 - It does not use AI, D1, R2, KV, Queues, Pages, Containers, Email, Images, Stream, or paid domains.
-- Messages are not stored. The relay only forwards small live reaction/chat events between active sockets in the same room.
+- Messages and TODOs are not stored. The relay only forwards small live reaction/chat/TODO snapshot events between active sockets in the same room.
 - Run `cd relay && npm run check:billing` before deployment to fail the build if dry-run output shows disallowed resources.
 
 ## Character Assets

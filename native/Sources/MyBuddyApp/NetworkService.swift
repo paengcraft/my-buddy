@@ -13,6 +13,7 @@ enum BuddyNetworkEvent {
     case reaction(animationId: String?)
     case chat(text: String)
     case peer(BuddyPeer)
+    case todoSnapshot(BuddyTodoSnapshot)
 }
 
 private struct BuddyWireMessage: Codable {
@@ -22,6 +23,7 @@ private struct BuddyWireMessage: Codable {
     let displayName: String?
     let reactionId: String?
     let text: String?
+    let todoSnapshot: BuddyTodoSnapshot?
     let sentAt: String?
 
     enum CodingKeys: String, CodingKey {
@@ -31,6 +33,7 @@ private struct BuddyWireMessage: Codable {
         case displayName = "display_name"
         case reactionId = "reaction_id"
         case text
+        case todoSnapshot = "todo_snapshot"
         case sentAt = "sent_at"
     }
 }
@@ -92,6 +95,10 @@ final class NetworkService {
 
     func sendChat(text: String) {
         send(type: "chat_message", reactionId: nil, text: text)
+    }
+
+    func sendTodoSnapshot(_ snapshot: BuddyTodoSnapshot) {
+        send(type: "todo_snapshot", reactionId: nil, text: nil, todoSnapshot: snapshot)
     }
 
     private func openSocket() {
@@ -209,13 +216,22 @@ final class NetworkService {
                 if let text = message.text, !text.isEmpty {
                     self.onEvent?(.chat(text: text))
                 }
+            case "todo_snapshot":
+                if let snapshot = message.todoSnapshot {
+                    self.onEvent?(.todoSnapshot(snapshot))
+                }
             default:
                 break
             }
         }
     }
 
-    private func send(type: String, reactionId: String?, text: String?) {
+    private func send(
+        type: String,
+        reactionId: String?,
+        text: String?,
+        todoSnapshot: BuddyTodoSnapshot? = nil
+    ) {
         controlQueue.async {
             guard self.socketDescriptor >= 0 else { return }
 
@@ -226,6 +242,7 @@ final class NetworkService {
                 displayName: self.displayName,
                 reactionId: reactionId,
                 text: text,
+                todoSnapshot: todoSnapshot,
                 sentAt: "\(Date().timeIntervalSince1970)"
             )
 

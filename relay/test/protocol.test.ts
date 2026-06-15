@@ -69,6 +69,94 @@ describe("relay message parsing", () => {
       sent_at: 1770000000,
     });
   });
+
+  test("accepts valid todo snapshots", () => {
+    const message = parseRelayMessage(
+      JSON.stringify({
+        type: "todo_snapshot",
+        message_id: "message-1",
+        device_id: "device-1",
+        display_name: "Buddy",
+        todo_snapshot: {
+          items: [
+            {
+              id: "todo-1",
+              text: "릴레이 확인",
+              isDone: false,
+              createdAt: 1770000000,
+              createdByDeviceId: "device-1",
+              updatedAt: 1770000000,
+              updatedByDeviceId: "device-1",
+            },
+          ],
+          deletions: [
+            {
+              id: "todo-2",
+              deletedAt: 1770000001,
+              deletedByDeviceId: "device-2",
+            },
+          ],
+        },
+        sent_at: 1770000002,
+      }),
+    );
+
+    expect(message).toEqual({
+      type: "todo_snapshot",
+      message_id: "message-1",
+      device_id: "device-1",
+      display_name: "Buddy",
+      todo_snapshot: {
+        items: [
+          {
+            id: "todo-1",
+            text: "릴레이 확인",
+            isDone: false,
+            createdAt: 1770000000,
+            createdByDeviceId: "device-1",
+            updatedAt: 1770000000,
+            updatedByDeviceId: "device-1",
+          },
+        ],
+        deletions: [
+          {
+            id: "todo-2",
+            deletedAt: 1770000001,
+            deletedByDeviceId: "device-2",
+          },
+        ],
+      },
+      sent_at: 1770000002,
+    });
+  });
+
+  test("rejects invalid todo snapshots", () => {
+    const message = parseRelayMessage(
+      JSON.stringify({
+        type: "todo_snapshot",
+        message_id: "message-1",
+        device_id: "device-1",
+        display_name: "Buddy",
+        todo_snapshot: {
+          items: [
+            {
+              id: "todo-1",
+              text: "x".repeat(121),
+              isDone: false,
+              createdAt: 1770000000,
+              createdByDeviceId: "device-1",
+              updatedAt: 1770000000,
+              updatedByDeviceId: "device-1",
+            },
+          ],
+          deletions: [],
+        },
+        sent_at: 1770000002,
+      }),
+    );
+
+    expect(message).toBeNull();
+  });
 });
 
 describe("rate limiting", () => {

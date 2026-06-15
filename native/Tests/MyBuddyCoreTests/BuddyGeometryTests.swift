@@ -35,6 +35,31 @@ final class BuddyGeometryTests: XCTestCase {
         XCTAssertEqual(settings.width, BuddyGeometry.minimumStageWidth)
     }
 
+    func testStageExpandsForCornerTodoBoardWithoutMovingCharacterAnchor() {
+        let idleAnchor = BuddyGeometry.characterAnchorOffset(
+            characterSize: 176,
+            chatOpen: false,
+            settingsOpen: false,
+            todoBoardOpen: false
+        )
+        let todoSize = BuddyGeometry.stageSize(
+            characterSize: 176,
+            chatOpen: false,
+            settingsOpen: false,
+            todoBoardOpen: true
+        )
+        let todoAnchor = BuddyGeometry.characterAnchorOffset(
+            characterSize: 176,
+            chatOpen: false,
+            settingsOpen: false,
+            todoBoardOpen: true
+        )
+
+        XCTAssertGreaterThanOrEqual(todoSize.width, BuddyGeometry.todoBoardWidth + 36)
+        XCTAssertGreaterThan(todoSize.height, 176 + BuddyGeometry.idleVerticalPadding)
+        XCTAssertEqual(todoAnchor.y, idleAnchor.y)
+    }
+
     func testCharacterAnchorMovesOnlyForBottomOverlays() {
         let idleAnchor = BuddyGeometry.characterAnchorOffset(
             characterSize: 176,

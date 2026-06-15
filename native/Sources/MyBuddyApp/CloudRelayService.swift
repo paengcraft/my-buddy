@@ -77,6 +77,21 @@ final class CloudRelayService {
         ])
     }
 
+    func sendTodoSnapshot(_ snapshot: BuddyTodoSnapshot) {
+        guard let snapshotObject = jsonObject(for: snapshot) else {
+            return
+        }
+
+        send([
+            "type": "todo_snapshot",
+            "message_id": UUID().uuidString,
+            "device_id": deviceId,
+            "display_name": displayName,
+            "todo_snapshot": snapshotObject,
+            "sent_at": Date().timeIntervalSince1970,
+        ])
+    }
+
     private func sendHello() {
         send([
             "type": "hello",
@@ -166,6 +181,11 @@ final class CloudRelayService {
                 if let message = value["text"] as? String, !message.isEmpty {
                     self.onEvent?(.chat(text: message))
                 }
+            case "todo_snapshot":
+                if let snapshotValue = value["todo_snapshot"],
+                   let snapshot = self.todoSnapshot(from: snapshotValue) {
+                    self.onEvent?(.todoSnapshot(snapshot))
+                }
             case "error":
                 self.onError?("Relay error: \(value["code"] as? String ?? "unknown")")
             default:
@@ -209,5 +229,23 @@ final class CloudRelayService {
         heartbeatTimer = nil
         reconnectTimer?.invalidate()
         reconnectTimer = nil
+    }
+
+    private func jsonObject(for snapshot: BuddyTodoSnapshot) -> Any? {
+        guard let data = try? JSONEncoder().encode(snapshot) else {
+            return nil
+        }
+
+        return try? JSONSerialization.jsonObject(with: data)
+    }
+
+    private func todoSnapshot(from value: Any) -> BuddyTodoSnapshot? {
+        guard JSONSerialization.isValidJSONObject(value),
+              let data = try? JSONSerialization.data(withJSONObject: value)
+        else {
+            return nil
+        }
+
+        return try? JSONDecoder().decode(BuddyTodoSnapshot.self, from: data)
     }
 }

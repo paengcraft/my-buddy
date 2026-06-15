@@ -10,6 +10,8 @@ struct BuddyRootView: View {
             VStack(spacing: 10) {
                 if state.isSettingsOpen {
                     SettingsPanel(state: state)
+                } else if state.isTodoBoardOpen {
+                    TodoBoard(state: state)
                 }
 
                 Spacer(minLength: 0)
@@ -368,6 +370,134 @@ private struct ChatComposer: View {
     }
 }
 
+private struct TodoBoard: View {
+    @ObservedObject var state: BuddyAppState
+    @State private var text = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                Text("둘이 할 일")
+                    .font(.system(size: 13, weight: .bold))
+                Spacer()
+                Text(state.todoCountLabel)
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(spacing: 6) {
+                ForEach(state.todoItems) { item in
+                    TodoRow(
+                        item: item,
+                        authorLabel: state.todoAuthorLabel(for: item),
+                        onToggle: { state.toggleTodo(id: item.id) },
+                        onDelete: { state.deleteTodo(id: item.id) }
+                    )
+                }
+
+                if state.todoItems.isEmpty {
+                    Text("친구와 공유할 TODO를 추가하세요.")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 8)
+                }
+            }
+
+            HStack(spacing: 7) {
+                TextField("TODO 추가", text: $text)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(addTodo)
+                    .onChange(of: text) { value in
+                        if value.count > BuddyTodoInputPolicy.maximumTextLength {
+                            text = String(value.prefix(BuddyTodoInputPolicy.maximumTextLength))
+                        }
+                    }
+
+                Button(action: addTodo) {
+                    Image(systemName: "plus")
+                        .frame(width: 13, height: 13)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(BuddyTodoInputPolicy.preparedText(text) == nil)
+                .help("Add TODO")
+            }
+
+            HStack {
+                Text(state.todoStatus ?? "코너 밖으로 드래그하면 닫힙니다.")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer()
+            }
+        }
+        .padding(12)
+        .frame(width: BuddyGeometry.todoBoardWidth)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color(nsColor: .separatorColor).opacity(0.44), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.12), radius: 18, x: 0, y: 10)
+    }
+
+    private func addTodo() {
+        if state.addTodo(text) {
+            text = ""
+        }
+    }
+}
+
+private struct TodoRow: View {
+    let item: BuddyTodoItem
+    let authorLabel: String
+    let onToggle: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Button(action: onToggle) {
+                Image(systemName: item.isDone ? "checkmark.square.fill" : "square")
+                    .frame(width: 13, height: 13)
+            }
+            .buttonStyle(.plain)
+            .help(item.isDone ? "Mark TODO as open" : "Mark TODO as done")
+
+            Text(item.text)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color(nsColor: .labelColor))
+                .lineLimit(1)
+
+            Spacer(minLength: 6)
+
+            Text(authorLabel)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(authorLabel == "me" ? Color.teal : Color.orange)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill((authorLabel == "me" ? Color.teal : Color.orange).opacity(0.12))
+                )
+
+            Button(action: onDelete) {
+                Image(systemName: "trash")
+                    .frame(width: 13, height: 13)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .help("Delete TODO")
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color(nsColor: .textBackgroundColor).opacity(0.74))
+        )
+    }
+}
+
 private struct CharacterInteractionOverlay: NSViewRepresentable {
     let state: BuddyAppState
 
@@ -438,6 +568,12 @@ final class CharacterInteractionNSView: NSView {
         }
 
         guard !didMoveWindow, !state.isSettingsOpen else {
+            if didMoveWindow {
+                state.updateDocking(
+                    windowFrame: window.frame,
+                    visibleFrame: window.screen?.visibleFrame
+                )
+            }
             return
         }
 

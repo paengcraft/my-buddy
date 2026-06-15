@@ -16,6 +16,14 @@ export type RelayMessage =
       display_name: string;
       text: string;
       sent_at: number;
+    }
+  | {
+      type: "todo_snapshot";
+      message_id: string;
+      device_id: string;
+      display_name: string;
+      todo_snapshot: TodoSnapshot;
+      sent_at: number;
     };
 
 export type ClientMeta = {
@@ -24,9 +32,32 @@ export type ClientMeta = {
   messageTimestamps: number[];
 };
 
+export type TodoItem = {
+  id: string;
+  text: string;
+  isDone: boolean;
+  createdAt: number;
+  createdByDeviceId: string;
+  updatedAt: number;
+  updatedByDeviceId: string;
+};
+
+export type TodoDeletionRecord = {
+  id: string;
+  deletedAt: number;
+  deletedByDeviceId: string;
+};
+
+export type TodoSnapshot = {
+  items: TodoItem[];
+  deletions: TodoDeletionRecord[];
+};
+
 const roomCodePattern = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/;
-const maximumMessageBytes = 2048;
+const maximumMessageBytes = 8192;
 const maximumMessagesPerWindow = 20;
+const maximumTodoItems = 30;
+const maximumTodoDeletions = 100;
 const rateWindowMs = 10_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -35,6 +66,41 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isShortString(value: unknown, maximumLength: number): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= maximumLength;
+}
+
+function isTodoItem(value: unknown): value is TodoItem {
+  return (
+    isRecord(value) &&
+    isShortString(value.id, 128) &&
+    isShortString(value.text, 120) &&
+    typeof value.isDone === "boolean" &&
+    typeof value.createdAt === "number" &&
+    isShortString(value.createdByDeviceId, 128) &&
+    typeof value.updatedAt === "number" &&
+    isShortString(value.updatedByDeviceId, 128)
+  );
+}
+
+function isTodoDeletionRecord(value: unknown): value is TodoDeletionRecord {
+  return (
+    isRecord(value) &&
+    isShortString(value.id, 128) &&
+    typeof value.deletedAt === "number" &&
+    isShortString(value.deletedByDeviceId, 128)
+  );
+}
+
+function isTodoSnapshot(value: unknown): value is TodoSnapshot {
+  if (!isRecord(value) || !Array.isArray(value.items) || !Array.isArray(value.deletions)) {
+    return false;
+  }
+
+  return (
+    value.items.length <= maximumTodoItems &&
+    value.deletions.length <= maximumTodoDeletions &&
+    value.items.every(isTodoItem) &&
+    value.deletions.every(isTodoDeletionRecord)
+  );
 }
 
 export function isValidRoomCode(value: string): boolean {
@@ -125,6 +191,26 @@ export function parseRelayMessage(message: string | ArrayBuffer): RelayMessage |
       device_id: value.device_id,
       display_name: value.display_name,
       text: value.text,
+      sent_at: value.sent_at,
+    };
+  }
+
+  if (value.type === "todo_snapshot") {
+    if (
+      !isShortString(value.message_id, 128) ||
+      !isShortString(value.device_id, 128) ||
+      !isShortString(value.display_name, 80) ||
+      !isTodoSnapshot(value.todo_snapshot) ||
+      typeof value.sent_at !== "number"
+    ) {
+      return null;
+    }
+    return {
+      type: "todo_snapshot",
+      message_id: value.message_id,
+      device_id: value.device_id,
+      display_name: value.display_name,
+      todo_snapshot: value.todo_snapshot,
       sent_at: value.sent_at,
     };
   }
